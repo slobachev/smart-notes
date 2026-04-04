@@ -2,6 +2,7 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { enrichNoteWithAi } from '@/lib/enrich-note-ai';
 
 const updateNoteSchema = z.object({
   title: z.string().min(1),
@@ -53,7 +54,17 @@ export async function PATCH(
     where: { id },
     data: parsed.data,
   });
-  return NextResponse.json(updated);
+
+  try {
+    await enrichNoteWithAi(updated.id, updated.title, updated.content);
+  } catch (e) {
+    console.error('AI enrichment failed', e);
+  }
+
+  const fresh = await prisma.note.findUniqueOrThrow({
+    where: { id: updated.id },
+  });
+  return NextResponse.json(fresh);
 }
 
 export async function DELETE(

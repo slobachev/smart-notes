@@ -2,6 +2,7 @@ import z from 'zod';
 import { auth } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { enrichNoteWithAi } from '@/lib/enrich-note-ai';
 
 const createNoteSchema = z.object({
   title: z.string().min(1),
@@ -41,7 +42,17 @@ export async function POST(req: Request) {
         userId: session.user.id,
       },
     });
-    return NextResponse.json(note);
+
+    try {
+      await enrichNoteWithAi(note.id, note.title, note.content);
+    } catch (e) {
+      console.error('Error enriching note with AI', e);
+    }
+
+    const fresh = await prisma.note.findUniqueOrThrow({
+      where: { id: note.id },
+    });
+    return NextResponse.json(fresh);
   } catch (e) {
     return NextResponse.json({ error: 'Error creating note' }, { status: 500 });
   }

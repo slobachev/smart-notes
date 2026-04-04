@@ -23,6 +23,8 @@ type Note = {
   content: string;
   createdAt: string;
   updatedAt: string;
+  summary?: string | null;
+  tags?: string[];
 };
 
 export default function NoteDetailPage() {
@@ -37,6 +39,7 @@ export default function NoteDetailPage() {
   const [error, setError] = useState('');
   const [formError, setFormError] = useState<Record<string, string[]>>({});
   const [isEditing, setIsEditing] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
 
   useEffect(() => {
     async function fetchNote() {
@@ -102,6 +105,22 @@ export default function NoteDetailPage() {
       router.refresh();
     } catch {
       setError('An error occurred');
+    }
+  }
+
+  async function handleSummarize() {
+    setSummarizing(true);
+    try {
+      const res = await fetch(`/api/notes/${id}/summary`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error();
+      setNote(data);
+    } catch {
+      setError('Could not generate summary');
+    } finally {
+      setSummarizing(false);
     }
   }
 
@@ -197,43 +216,68 @@ export default function NoteDetailPage() {
         <Link href="/notes">← Back to list</Link>
       </Button>
       <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-4">
-          <div>
-            <CardTitle className="text-2xl">{note.title}</CardTitle>
+        <CardHeader>
+          <div className="flex flex-row items-start justify-between gap-4">
+            <div>
+              <CardTitle className="text-2xl">{note.title}</CardTitle>
+              <CardDescription className="mt-2">
+                Updated:{' '}
+                {new Date(note.updatedAt).toLocaleString('en-US', {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+              </CardDescription>
+            </div>
+            <div className="flex shrink-0 gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={summarizing}
+                onClick={handleSummarize}
+              >
+                {summarizing ? 'Summarizing…' : 'Summarize'}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(true)}
+              >
+                Edit
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                onClick={handleDelete}
+              >
+                Delete
+              </Button>
+            </div>
+          </div>
+          {note.summary && (
             <CardDescription className="mt-2">
-              Updated:{' '}
-              {new Date(note.updatedAt).toLocaleString('en-US', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-              })}
+              Summary: {note.summary}
             </CardDescription>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsEditing(true)}
-            >
-              Edit
-            </Button>
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              onClick={handleDelete}
-            >
-              Delete
-            </Button>
-          </div>
+          )}
         </CardHeader>
         <CardContent>
           <p className="whitespace-pre-wrap text-card-foreground">
             {note.content || 'No text'}
           </p>
+          {note.tags && note.tags.length > 0 && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {note.tags.map((tag) => (
+                <span className="rounded-md border bg-muted/50 px-2 py-0.5 text-xs">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
