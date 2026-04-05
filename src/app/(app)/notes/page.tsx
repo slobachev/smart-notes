@@ -162,7 +162,7 @@ export default function NotesPage() {
         <CardHeader>
           <CardTitle className="text-base">Ask your notes</CardTitle>
           <CardDescription>
-            The answer is built only on the content of your notes (RAG).
+            The answer is built only on the content of your notes.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">

@@ -12,6 +12,8 @@ const bodySchema = z.object({
   question: z.string().min(1).max(2000),
 });
 
+const SIMILARITY_THRESHOLD = 0.8;
+
 type Row = {
   id: string;
   title: string;
@@ -53,13 +55,16 @@ export async function POST(req: Request) {
   }
 
   const rows = await prisma.$queryRawUnsafe<Row[]>(
-    `SELECT id, title, content
+    `SELECT id, title, content, embedding <=> $2::vector(1536) AS similarity
      FROM "Note"
-     WHERE "userId" = $1 AND embedding IS NOT NULL
-     ORDER BY embedding <=> $2::vector(1536)
+     WHERE "userId" = $1 
+     AND embedding IS NOT NULL
+     AND (embedding <=> $2::vector(1536)) < $3
+     ORDER BY similarity
      LIMIT 8`,
     session.user.id,
-    literal
+    literal,
+    SIMILARITY_THRESHOLD
   );
 
   try {
