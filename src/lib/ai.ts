@@ -8,6 +8,7 @@ export const AI_EMBEDDING_MODEL = 'text-embedding-3-small';
 export const EMBEDDING_DIMENSIONS = 1536;
 
 const MAX_EMBED_INPUT_CHARS = 12_000;
+const MAX_RAG_CONTEXT_CHARS = 24_000;
 
 function buildNoteBody(title: string, content: string): string {
   const t = title.trim();
@@ -141,4 +142,64 @@ export async function embedNoteText(
  */
 export function embeddingToPgVectorLiteral(embedding: number[]): string {
   return `[${embedding.join(',')}]`;
+}
+
+function buildRagContextBlock(
+  notes: { id: string; title: string; content: string }[]
+): string {
+  const parts: string[] = [];
+  let used = 0;
+  for (const n of notes) {
+    const block = `--- Note id=${n.id}\nTitle: ${n.title}\n${n.content.trim()}\n`;
+    if (used + block.length > MAX_RAG_CONTEXT_CHARS) break;
+    parts.push(block);
+    used += block.length;
+  }
+  return parts.join('\n');
+}
+export type RagAnswerResult = {
+  answer: string;
+  citedNoteIds: string[];
+};
+/**
+ * Answers using only the provided note excerpts. citedNoteIds = notes included in context.
+ */
+export async function answerQuestionFromNotes(
+  question: string,
+  notes: { id: string; title: string; content: string }[]
+): Promise<RagAnswerResult> {
+  const q = question.trim();
+  if (!q) {
+    return { answer: '', citedNoteIds: [] };
+  }
+  if (notes.length === 0) {
+    return {
+      answer:
+        'There is no suitable context in your notes yet (or the notes do not have embeddings). Add some text or save the note again.',
+      citedNoteIds: [],
+    };
+  }
+  const context = buildRagContextBlock(notes);
+  const citedNoteIds = notes.map((n) => n.id);
+  const completion = await openai.chat.completions.create({
+    model: AI_CHAT_MODEL,
+    temperature: 0.2,
+    messages: [
+      {
+        role: 'system',
+        content:
+          'You are a helpful assistant. Answer ONLY using the "Notes" context below. ' +
+          'If the answer is not in the notes, say clearly that the notes do not contain enough information. ' +
+          'Do not invent facts. Use the same language as the user question when possible.',
+      },
+      {
+        role: 'user',
+        content: `Notes:\n${context}\n\nQuestion: ${q}`,
+      },
+    ],
+  });
+  const answer =
+    completion.choices[0]?.message?.content?.trim() ??
+    'Was unable to generate an answer.';
+  return { answer, citedNoteIds };
 }

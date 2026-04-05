@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 
 type Note = {
   id: string;
@@ -30,6 +31,12 @@ export default function NotesPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [semanticResults, setSemanticResults] = useState<Note[] | null>(null);
+  const [askQuestion, setAskQuestion] = useState('');
+  const [askLoading, setAskLoading] = useState(false);
+  const [askAnswer, setAskAnswer] = useState('');
+  const [askSources, setAskSources] = useState<{ id: string; title: string }[]>(
+    []
+  );
 
   const isSearchMode = semanticResults !== null;
   const list = isSearchMode ? semanticResults : notes;
@@ -48,6 +55,27 @@ export default function NotesPage() {
       setError('Semantic search failed');
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function handleAsk() {
+    setAskLoading(true);
+    setAskAnswer('');
+    setAskSources([]);
+    try {
+      const res = await fetch('/api/notes/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: askQuestion.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error();
+      setAskAnswer(data.answer ?? '');
+      setAskSources(data.sources ?? []);
+    } catch {
+      setError('Could not get answer');
+    } finally {
+      setAskLoading(false);
     }
   }
 
@@ -130,6 +158,47 @@ export default function NotesPage() {
           <Link href="/notes/new">New Note</Link>
         </Button>
       </div>
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle className="text-base">Ask your notes</CardTitle>
+          <CardDescription>
+            The answer is built only on the content of your notes (RAG).
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Textarea
+            placeholder="For example: what did I write about my vacation?"
+            value={askQuestion}
+            onChange={(e) => setAskQuestion(e.target.value)}
+            rows={3}
+          />
+          <Button
+            type="button"
+            disabled={askLoading || !askQuestion.trim()}
+            onClick={handleAsk}
+          >
+            {askLoading ? 'Thinking…' : 'Ask'}
+          </Button>
+          {askAnswer && (
+            <div className="rounded-md border bg-muted/30 p-3 text-sm whitespace-pre-wrap">
+              {askAnswer}
+            </div>
+          )}
+          {askSources.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Context from:{' '}
+              {askSources.map((s, i) => (
+                <span key={s.id}>
+                  {i > 0 ? ', ' : ''}
+                  <Link href={`/notes/${s.id}`} className="underline">
+                    {s.title}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+        </CardContent>
+      </Card>
       {list.length === 0 ? (
         <Card>
           <CardHeader>
