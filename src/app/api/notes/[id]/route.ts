@@ -3,6 +3,11 @@ import { auth } from '@/lib/auth';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { enrichNoteWithAi } from '@/lib/enrich-note-ai';
+import {
+  consumeUserRateLimit,
+  rateLimitHeaders,
+  tooManyRequestsResponse,
+} from '@/lib/rate-limit';
 
 const updateNoteSchema = z.object({
   title: z.string().min(1),
@@ -35,6 +40,12 @@ export async function PATCH(
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const rl = await consumeUserRateLimit(session.user.id, 'enrich');
+  if (!rl.allowed) {
+    return tooManyRequestsResponse(rl.retryAfterSec);
+  }
+
   const { id } = await params;
   const note = await prisma.note.findFirst({
     where: { id, userId: session.user.id },
@@ -64,7 +75,7 @@ export async function PATCH(
   const fresh = await prisma.note.findUniqueOrThrow({
     where: { id: updated.id },
   });
-  return NextResponse.json(fresh);
+  return NextResponse.json(fresh, { headers: rateLimitHeaders(rl) });
 }
 
 export async function DELETE(

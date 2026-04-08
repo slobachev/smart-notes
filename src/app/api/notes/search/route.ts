@@ -1,8 +1,12 @@
-import { NullTypes } from '@prisma/client-runtime-utils';
 import { auth } from '@/lib/auth';
 import { createEmbedding, embeddingToPgVectorLiteral } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import {
+  consumeUserRateLimit,
+  rateLimitHeaders,
+  tooManyRequestsResponse,
+} from '@/lib/rate-limit';
 
 const SIMILARITY_THRESHOLD = 0.8;
 
@@ -21,6 +25,10 @@ export async function GET(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const rl = await consumeUserRateLimit(session.user.id, 'search');
+  if (!rl.allowed) {
+    return tooManyRequestsResponse(rl.retryAfterSec);
   }
 
   const { searchParams } = new URL(req.url);
@@ -59,5 +67,5 @@ export async function GET(req: Request) {
     literal,
     SIMILARITY_THRESHOLD
   );
-  return NextResponse.json(rows);
+  return NextResponse.json(rows, { headers: rateLimitHeaders(rl) });
 }

@@ -7,6 +7,11 @@ import {
 } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
 import { NextResponse } from 'next/server';
+import {
+  consumeUserRateLimit,
+  rateLimitHeaders,
+  tooManyRequestsResponse,
+} from '@/lib/rate-limit';
 
 const bodySchema = z.object({
   question: z.string().min(1).max(2000),
@@ -24,6 +29,10 @@ export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  const rl = await consumeUserRateLimit(session.user.id, 'ask');
+  if (!rl.allowed) {
+    return tooManyRequestsResponse(rl.retryAfterSec);
   }
 
   let body: unknown;
@@ -72,11 +81,14 @@ export async function POST(req: Request) {
       question,
       rows
     );
-    return NextResponse.json({
-      answer,
-      citedNoteIds,
-      sources: rows.map((r) => ({ id: r.id, title: r.title })),
-    });
+    return NextResponse.json(
+      {
+        answer,
+        citedNoteIds,
+        sources: rows.map((r) => ({ id: r.id, title: r.title })),
+      },
+      { headers: rateLimitHeaders(rl) }
+    );
   } catch (e) {
     console.error('Ask: LLM failed', e);
     return NextResponse.json(
