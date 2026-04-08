@@ -29,7 +29,7 @@ function numEnv(name: string, fallback: number): number {
 }
 
 function getRedis(): Redis | null {
-  if (!process.env.RED_KV_REST_API_URL || !process.env.RED_KV_REST_API_TOKEN) {
+  if (!process.env.KV_REST_API_URL || !process.env.KV_REST_API_TOKEN) {
     return null;
   }
   return Redis.fromEnv();
