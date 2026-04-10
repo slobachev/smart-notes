@@ -9,6 +9,9 @@ export const EMBEDDING_DIMENSIONS = 1536;
 
 const MAX_EMBED_INPUT_CHARS = 12_000;
 const MAX_RAG_CONTEXT_CHARS = 24_000;
+const RAG_SYSTEM_PROMPT = `You are a helpful assistant. Answer ONLY using the "Notes" context below. 
+  If the answer is not in the notes, say clearly that the notes do not contain enough information. 
+  Do not invent facts. Use the same language as the user question when possible.`;
 
 function buildNoteBody(title: string, content: string): string {
   const t = title.trim();
@@ -187,10 +190,7 @@ export async function answerQuestionFromNotes(
     messages: [
       {
         role: 'system',
-        content:
-          'You are a helpful assistant. Answer ONLY using the "Notes" context below. ' +
-          'If the answer is not in the notes, say clearly that the notes do not contain enough information. ' +
-          'Do not invent facts. Use the same language as the user question when possible.',
+        content: RAG_SYSTEM_PROMPT,
       },
       {
         role: 'user',
@@ -202,4 +202,28 @@ export async function answerQuestionFromNotes(
     completion.choices[0]?.message?.content?.trim() ??
     'Was unable to generate an answer.';
   return { answer, citedNoteIds };
+}
+
+/**
+ * Streamed chat completion for RAG (те же правила, что у answerQuestionFromNotes).
+ * Вызывай только при notes.length > 0.
+ */
+export async function streamRagAnswer(
+  question: string,
+  notes: { id: string; title: string; content: string }[]
+) {
+  const q = question.trim();
+  const context = buildRagContextBlock(notes);
+  return openai.chat.completions.create({
+    model: AI_CHAT_MODEL,
+    stream: true,
+    temperature: 0.2,
+    messages: [
+      { role: 'system', content: RAG_SYSTEM_PROMPT },
+      {
+        role: 'user',
+        content: `Notes:\n${context}\n\nQuestion: ${q}`,
+      },
+    ],
+  });
 }

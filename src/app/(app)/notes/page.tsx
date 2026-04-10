@@ -62,18 +62,59 @@ export default function NotesPage() {
     setAskLoading(true);
     setAskAnswer('');
     setAskSources([]);
+    setError('');
     try {
       const res = await fetch('/api/notes/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: askQuestion.trim() }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error();
-      setAskAnswer(data.answer ?? '');
-      setAskSources(data.sources ?? []);
-    } catch {
-      setError('Could not get answer');
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        throw new Error(
+          typeof errBody?.error === 'string'
+            ? errBody.error
+            : 'Could not get answer'
+        );
+      }
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response body');
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let accumulated = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let msg: {
+            type: string;
+            sources?: { id: string; title: string }[];
+            text?: string;
+            message?: string;
+          };
+          try {
+            msg = JSON.parse(line) as typeof msg;
+          } catch {
+            continue;
+          }
+          if (msg.type === 'meta' && msg.sources) {
+            setAskSources(msg.sources);
+          }
+          if (msg.type === 'delta' && msg.text) {
+            accumulated += msg.text;
+            setAskAnswer(accumulated);
+          }
+          if (msg.type === 'error') {
+            throw new Error(msg.message ?? 'Stream error');
+          }
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not get answer');
     } finally {
       setAskLoading(false);
     }
