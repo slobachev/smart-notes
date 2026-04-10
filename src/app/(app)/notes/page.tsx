@@ -1,124 +1,86 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
-
-type Note = {
-  id: string;
-  title: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-  summary?: string | null;
-  tags?: string[];
-};
+import { AskNotesCard } from './AskNotesCard';
+import { consumeAskNdjsonStream } from './consume-ask-stream';
+import { NotesList } from './NotesList';
+import { NotesToolbar } from './NotesToolbar';
+import type { Note, NoteSource } from './types';
 
 export default function NotesPage() {
   const [notes, setNotes] = useState<Note[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+
   const [searchQuery, setSearchQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [semanticResults, setSemanticResults] = useState<Note[] | null>(null);
+
   const [askQuestion, setAskQuestion] = useState('');
   const [askLoading, setAskLoading] = useState(false);
   const [askAnswer, setAskAnswer] = useState('');
-  const [askSources, setAskSources] = useState<{ id: string; title: string }[]>(
-    []
-  );
+  const [askSources, setAskSources] = useState<NoteSource[]>([]);
 
-  const isSearchMode = semanticResults !== null;
-  const list = isSearchMode ? semanticResults : notes;
+  const displayedNotes = semanticResults ?? notes;
 
-  async function runSemanticSearch() {
+  const runSemanticSearch = useCallback(async () => {
     const q = searchQuery.trim();
     if (!q) return;
+
     setSearching(true);
     setError('');
     try {
-      const res = await fetch(`/api/notes/search?q=${encodeURIComponent(q)}`);
+      const res = await fetch(
+        `/api/notes/search?q=${encodeURIComponent(q)}`
+      );
       if (!res.ok) throw new Error('Search failed');
-      const data = await res.json();
+      const data = (await res.json()) as Note[];
       setSemanticResults(data);
     } catch {
       setError('Semantic search failed');
     } finally {
       setSearching(false);
     }
-  }
+  }, [searchQuery]);
 
-  async function handleAsk() {
+  const handleAsk = useCallback(async () => {
     setAskLoading(true);
     setAskAnswer('');
     setAskSources([]);
     setError('');
+
     try {
       const res = await fetch('/api/notes/ask', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: askQuestion.trim() }),
       });
+
       if (!res.ok) {
-        const errBody = await res.json().catch(() => ({}));
+        const errBody = (await res.json().catch(() => ({}))) as {
+          error?: unknown;
+        };
         throw new Error(
-          typeof errBody?.error === 'string'
+          typeof errBody.error === 'string'
             ? errBody.error
             : 'Could not get answer'
         );
       }
+
       const reader = res.body?.getReader();
       if (!reader) throw new Error('No response body');
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let accumulated = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          let msg: {
-            type: string;
-            sources?: { id: string; title: string }[];
-            text?: string;
-            message?: string;
-          };
-          try {
-            msg = JSON.parse(line) as typeof msg;
-          } catch {
-            continue;
-          }
-          if (msg.type === 'meta' && msg.sources) {
-            setAskSources(msg.sources);
-          }
-          if (msg.type === 'delta' && msg.text) {
-            accumulated += msg.text;
-            setAskAnswer(accumulated);
-          }
-          if (msg.type === 'error') {
-            throw new Error(msg.message ?? 'Stream error');
-          }
-        }
-      }
+
+      await consumeAskNdjsonStream(reader, {
+        onMeta: setAskSources,
+        onDelta: setAskAnswer,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not get answer');
     } finally {
       setAskLoading(false);
     }
-  }
+  }, [askQuestion]);
 
   useEffect(() => {
     async function fetchNotes() {
@@ -131,7 +93,7 @@ export default function NotesPage() {
           }
           throw new Error('Failed to load notes');
         }
-        const data = await res.json();
+        const data = (await res.json()) as Note[];
         setNotes(data);
       } catch (e) {
         setError(e instanceof Error ? e.message : 'An error occurred');
@@ -160,127 +122,28 @@ export default function NotesPage() {
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">My Notes</h1>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <Input
-            placeholder="Search by meaning…"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void runSemanticSearch();
-            }}
-            className="max-w-md"
-          />
-          <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={searching}
-              onClick={() => void runSemanticSearch()}
-            >
-              {searching ? 'Searching…' : 'Semantic search'}
-            </Button>
-            {semanticResults !== null && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setSemanticResults(null);
-                  setSearchQuery('');
-                }}
-              >
-                Clear
-              </Button>
-            )}
-          </div>
-        </div>
-        <Button asChild>
-          <Link href="/notes/new">New Note</Link>
-        </Button>
-      </div>
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">Ask your notes</CardTitle>
-          <CardDescription>
-            The answer is built only on the content of your notes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3">
-          <Textarea
-            placeholder="For example: what did I write about my vacation?"
-            value={askQuestion}
-            onChange={(e) => setAskQuestion(e.target.value)}
-            rows={3}
-          />
-          <Button
-            type="button"
-            disabled={askLoading || !askQuestion.trim()}
-            onClick={handleAsk}
-          >
-            {askLoading ? 'Thinking…' : 'Ask'}
-          </Button>
-          {askAnswer && (
-            <div className="rounded-md border bg-muted/30 p-3 text-sm whitespace-pre-wrap">
-              {askAnswer}
-            </div>
-          )}
-          {askSources.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              Context from:{' '}
-              {askSources.map((s, i) => (
-                <span key={s.id}>
-                  {i > 0 ? ', ' : ''}
-                  <Link href={`/notes/${s.id}`} className="underline">
-                    {s.title}
-                  </Link>
-                </span>
-              ))}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-      {list.length === 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>No notes yet</CardTitle>
-            <CardDescription>
-              Create your first note to get started.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Button asChild>
-              <Link href="/notes/new">Create Note</Link>
-            </Button>
-          </CardContent>
-        </Card>
-      ) : (
-        <ul className="space-y-3">
-          {list.map((note) => (
-            <li key={note.id}>
-              <Link href={`/notes/${note.id}`}>
-                <Card className="transition-colors hover:bg-accent/50">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{note.title}</CardTitle>
-                    <CardDescription className="line-clamp-2">
-                      {note.content || 'No text'}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="pt-0">
-                    <p className="text-xs text-muted-foreground">
-                      {new Date(note.updatedAt).toLocaleDateString('en-US', {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
-                    </p>
-                  </CardContent>
-                </Card>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      <NotesToolbar
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        onSearchSubmit={() => void runSemanticSearch()}
+        searching={searching}
+        hasActiveSearch={semanticResults !== null}
+        onClearSearch={() => {
+          setSemanticResults(null);
+          setSearchQuery('');
+        }}
+      />
+
+      <AskNotesCard
+        question={askQuestion}
+        onQuestionChange={setAskQuestion}
+        onAsk={() => void handleAsk()}
+        loading={askLoading}
+        answer={askAnswer}
+        sources={askSources}
+      />
+
+      <NotesList notes={displayedNotes} />
     </div>
   );
 }
