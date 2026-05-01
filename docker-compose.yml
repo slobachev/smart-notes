@@ -1,11 +1,11 @@
 services:
   postgres:
     image: pgvector/pgvector:0.8.2-pg17-trixie
-    container_name: fs-learn-postgres
+    container_name: smart-notes-postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: fs_learn
+      POSTGRES_DB: smart_notes
     ports:
       - "9999:5432"
     volumes:

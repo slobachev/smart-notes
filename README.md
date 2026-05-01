@@ -28,10 +28,6 @@ Copy `.env.example` to `.env` and fill in the values.
 | `KV_*`, `REDIS_URL`      | Upstash Redis (see `.env.example`)             |
 | `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN (optional; client error reporting)  |
 
-With the included `docker-compose` defaults:
-
-`DATABASE_URL="postgresql://postgres:postgres@localhost:9999/fs_learn"`
-
 ## Local setup
 
 ```bash

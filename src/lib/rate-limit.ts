@@ -58,7 +58,7 @@ export async function consumeUserRateLimit(
     return { allowed: true, remaining: max, limit: max };
   }
   const windowIndex = Math.floor(Date.now() / 1000 / windowSec);
-  const key = `rl:fs-learn:${bucket}:${userId}:${windowIndex}`;
+  const key = `rl:smart-notes:${bucket}:${userId}:${windowIndex}`;
   const count = await redis.incr(key);
   if (count === 1) {
     await redis.expire(key, windowSec);
