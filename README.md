@@ -1,4 +1,4 @@
-# Smart Notes (fs-learn)
+# Smart Notes
 
 A notes web app with search, tags, pgvector embeddings, and OpenAI-powered features.
 
