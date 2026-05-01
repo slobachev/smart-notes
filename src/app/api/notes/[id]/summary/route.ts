@@ -2,6 +2,11 @@ import { generateSummaryForNote } from '@/lib/ai';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { NextResponse } from 'next/server';
+import {
+  consumeUserRateLimit,
+  rateLimitHeaders,
+  tooManyRequestsResponse,
+} from '@/lib/rate-limit';
 
 export async function POST(
   _req: Request,
@@ -11,6 +16,12 @@ export async function POST(
   if (!session?.user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  const rl = await consumeUserRateLimit(session.user.id, 'summary');
+  if (!rl.allowed) {
+    return tooManyRequestsResponse(rl.retryAfterSec);
+  }
+
   const { id } = await params;
   const note = await prisma.note.findFirst({
     where: { id, userId: session.user.id },
@@ -24,7 +35,7 @@ export async function POST(
       where: { id },
       data: { summary },
     });
-    return NextResponse.json(updated);
+    return NextResponse.json(updated, { headers: rateLimitHeaders(rl) });
   } catch (e) {
     console.error('Summary failed', e);
     return NextResponse.json(
